@@ -1,0 +1,22 @@
+#define SK_DEBUG 1
+
+enclave {
+	trusted {
+		public int ecall_sk_enroll_ed25519(
+		    [in, string] const char *application,
+		    [out, size=public_key_len] uint8_t *public_key, size_t public_key_len,
+		    [out, size=key_handle_len] uint8_t *key_handle, size_t key_handle_len);
+		public int ecall_sk_sign_ed25519(
+		    [in, size=message_len] const uint8_t *message, size_t message_len,
+		    [in, string] const char *application,
+		    [in, size=key_handle_len] const uint8_t *key_handle, size_t key_handle_len,
+		    uint8_t flags,
+		    [out] uint32_t *counter,
+		    [out, size=sig_r_len] uint8_t *sig_r, size_t sig_r_len);
+	};
+#ifdef SK_DEBUG
+	untrusted {
+		void ocall_puts([in, string] const char *str);
+	};
+#endif
+};

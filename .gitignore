@@ -1,0 +1,8 @@
+.gitignore
+.config_*
+*_t.c
+*_t.h
+*_u.c
+*_u.h
+*.o
+*.so
