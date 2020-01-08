@@ -30,7 +30,7 @@
 /* #define SK_DEBUG 1 */
 
 #if SSH_SK_VERSION_MAJOR != 0x00040000
-# error SK API has changed, sk-dummy.c needs an update
+# error SK API has changed, sk-sgx.c needs an update
 #endif
 
 #define ENCLAVE_FILENAME "enclave.signed.so"

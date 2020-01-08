@@ -133,7 +133,7 @@ ecall_sk_enroll_ed25519(const char *application,
 	if ((r = sgx_seal_data(aadlen, (const uint8_t*)application,
 	    sizeof(sk), sk, key_handle_need, (sgx_sealed_data_t *)key_handle))
 	    != SGX_SUCCESS) {
-		debug("%s: sgx_seal_data failed with %d", __func__, r);
+		debug("%s: sgx_seal_data failed with 0x%x", __func__, r);
 		goto out;
 	}
 
@@ -203,7 +203,7 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 	}
 	if ((r = sgx_unseal_data(sealed, unsealed_application, &aadlen,
 	    sk, &sklen)) != SGX_SUCCESS) {
-		debug("%s: sgx_unseal_data failed with %d", __func__, r);
+		debug("%s: sgx_unseal_data failed with 0x%x", __func__, r);
 		goto out;
 	}
 	if (aadlen != alen) {
