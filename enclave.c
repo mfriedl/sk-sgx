@@ -211,7 +211,7 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 		    __func__, aadlen, alen);
 		goto out;
 	}
-	if (memcmp(unsealed_application, application, alen) != 0) {
+	if (consttime_memequal(unsealed_application, application, alen) == 0) {
 		debug("%s: unsealed_application %s does not match %s", __func__,
 		    (char *)unsealed_application, application);
 		goto out;
