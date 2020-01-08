@@ -24,6 +24,7 @@
 #include "crypto_api.h"
 
 #include "sgx_trts.h"
+#include "sgx_tseal.h"
 #include "sk_t.h"
 
 #define explicit_bzero(s, n) memset_s(s, n, 0, n)
@@ -71,14 +72,43 @@ randombytes(unsigned char *buf, unsigned long long nbytes)
 		abort();
 }
 
+/* key handle contains AES-GCM-sealed sk, application is used as AAD */
+int
+ecall_sk_get_key_handle_len_ed25519(const char *application,
+    size_t *key_handle_len)
+{
+	int ret = -1;
+	size_t alen;
+
+	if (key_handle_len == NULL || application == NULL) {
+		debug("%s: NULL", __func__);
+		goto out;
+	}
+	alen = strlen(application);
+	if (alen >= UINT32_MAX) {
+		debug("%s: application too long: %zu", __func__, alen);
+		goto out;
+	}
+	*key_handle_len = sgx_calc_sealed_data_size((uint32_t)alen,
+	    crypto_sign_ed25519_SECRETKEYBYTES);
+	/* success */
+	ret = 0;
+ out:
+	return ret;
+}
+
 int
 ecall_sk_enroll_ed25519(const char *application,
     uint8_t *public_key, size_t public_key_len,
     uint8_t *key_handle, size_t key_handle_len)
 {
 	int ret = -1;
+	int r;
+	uint8_t sk[crypto_sign_ed25519_SECRETKEYBYTES];
+	uint32_t aadlen, key_handle_need;
+	size_t alen;
 
-	if (public_key == NULL || key_handle == NULL) {
+	if (public_key == NULL || key_handle == NULL || application == NULL) {
 		debug("%s: NULL", __func__);
 		goto out;
 	}
@@ -86,14 +116,31 @@ ecall_sk_enroll_ed25519(const char *application,
 		debug("%s: public_key_len", __func__);
 		goto out;
 	}
-	if (key_handle_len != crypto_sign_ed25519_SECRETKEYBYTES) {
-		debug("%s: key_handle_len", __func__);
+	/* Seal private key */
+	alen = strlen(application);
+	if (alen >= UINT32_MAX) {
+		debug("%s: application too long: %zu", __func__, alen);
 		goto out;
 	}
-	crypto_sign_ed25519_keypair(public_key, key_handle);
+	aadlen = (uint32_t)alen;
+	key_handle_need = sgx_calc_sealed_data_size(aadlen, sizeof(sk));
+	if (key_handle_len != key_handle_need) {
+		debug("%s: key_handle_len %zu != need %u", __func__,
+		    key_handle_len, key_handle_need);
+		goto out;
+	}
+	crypto_sign_ed25519_keypair(public_key, sk);
+	if ((r = sgx_seal_data(aadlen, (const uint8_t*)application,
+	    sizeof(sk), sk, key_handle_need, (sgx_sealed_data_t *)key_handle))
+	    != SGX_SUCCESS) {
+		debug("%s: sgx_seal_data failed with %d", __func__, r);
+		goto out;
+	}
+
 	/* success */
 	ret = 0;
  out:
+	explicit_bzero(&sk, sizeof(sk));
 	return ret;
 }
 
@@ -104,10 +151,16 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 {
 	size_t o;
 	int ret = -1;
+	int r;
 	uint8_t	apphash[crypto_hash_sha256_BYTES];
 	uint8_t signbuf[sizeof(apphash) + sizeof(flags) +
 	    sizeof(*counter) + crypto_hash_sha256_BYTES];
 	uint8_t sig[crypto_sign_ed25519_BYTES + sizeof(signbuf)];
+	uint8_t sk[crypto_sign_ed25519_SECRETKEYBYTES];
+	uint8_t *unsealed_application = NULL;
+	uint32_t aadlen, sklen, key_handle_need;
+	size_t alen;
+	const sgx_sealed_data_t *sealed = (const sgx_sealed_data_t *)key_handle;
 	unsigned long long smlen;
 
 	if (message == NULL || application == NULL || key_handle == NULL ||
@@ -115,18 +168,58 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 		debug("%s: NULL", __func__);
 		goto out;
 	}
-	if (key_handle_len != crypto_sign_ed25519_SECRETKEYBYTES) {
-		debug("%s: bad key handle length %zu", __func__, key_handle_len);
-		goto out;
-	}
 	/* Expect message to be pre-hashed */
 	if (message_len != crypto_hash_sha256_BYTES) {
 		debug("%s: bad message len %zu", __func__, message_len);
 		goto out;
 	}
+
+	/* Extract sealed private key */
+	sklen = sgx_get_encrypt_txt_len(sealed);
+	if (sklen != sizeof(sk)) {
+		debug("%s: sklen %u != sizeof(sk) %zu", __func__,
+		    sklen, sizeof(sk));
+		goto out;
+	}
+	alen = strlen(application);
+	if (alen >= UINT32_MAX) {
+		debug("%s: application too long: %zu", __func__, alen);
+		goto out;
+	}
+	aadlen = sgx_get_add_mac_txt_len(sealed);
+	if (aadlen != alen) {
+		debug("%s: aadlen %u != alen %zu", __func__, aadlen, alen);
+		goto out;
+	}
+	key_handle_need = sgx_calc_sealed_data_size(aadlen, sklen);
+	if (key_handle_len < key_handle_need) {
+		debug("%s: key_handle_len %zu < need %u", __func__,
+		    key_handle_len, key_handle_need);
+		goto out;
+	}
+	if ((unsealed_application = malloc(aadlen)) == NULL) {
+		debug("%s: malloc addlen %u", __func__, aadlen);
+		goto out;
+	}
+	if ((r = sgx_unseal_data(sealed, unsealed_application, &aadlen,
+	    sk, &sklen)) != SGX_SUCCESS) {
+		debug("%s: sgx_unseal_data failed with %d", __func__, r);
+		goto out;
+	}
+	if (aadlen != alen) {
+		debug("%s: unsealed aadlen %u != alen %zu",
+		    __func__, aadlen, alen);
+		goto out;
+	}
+	if (memcmp(unsealed_application, application, alen) != 0) {
+		debug("%s: unsealed_application %s does not match %s", __func__,
+		    (char *)unsealed_application, application);
+		goto out;
+	}
+
 	/* Prepare data to be signed */
 	dump("message", message, message_len);
-	crypto_hash_sha256(apphash, application, strlen(application));
+	crypto_hash_sha256(apphash, unsealed_application, aadlen);
 	dump("apphash", apphash, sizeof(apphash));
 
 	memcpy(signbuf, apphash, sizeof(apphash));
@@ -146,8 +239,8 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 	dump("signbuf", signbuf, sizeof(signbuf));
 	/* create and encode signature */
 	smlen = sizeof(signbuf);
-	if (crypto_sign_ed25519(sig, &smlen, signbuf, sizeof(signbuf),
-	    key_handle) != 0) {
+	if (crypto_sign_ed25519(sig, &smlen, signbuf, sizeof(signbuf), sk)
+	    != 0) {
 		debug("%s: crypto_sign_ed25519 failed", __func__);
 		goto out;
 	}
@@ -167,5 +260,10 @@ ecall_sk_sign_ed25519(const uint8_t *message, size_t message_len,
 	explicit_bzero(&apphash, sizeof(apphash));
 	explicit_bzero(&signbuf, sizeof(signbuf));
 	explicit_bzero(&sig, sizeof(sig));
+	explicit_bzero(&sk, sizeof(sk));
+	if (unsealed_application) {
+		explicit_bzero(unsealed_application, aadlen);
+		free(unsealed_application);
+	}
 	return ret;
 }

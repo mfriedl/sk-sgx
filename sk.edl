@@ -2,6 +2,9 @@
 
 enclave {
 	trusted {
+		public int ecall_sk_get_key_handle_len_ed25519(
+		    [in, string] const char *application,
+		    [out] size_t *key_handle_len);
 		public int ecall_sk_enroll_ed25519(
 		    [in, string] const char *application,
 		    [out, size=public_key_len] uint8_t *public_key, size_t public_key_len,

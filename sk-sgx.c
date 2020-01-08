@@ -86,7 +86,7 @@ sk_api_version(void)
 }
 
 static int
-pack_key_ed25519(const char *application,  struct sk_enroll_response *response)
+pack_key_ed25519(const char *application, struct sk_enroll_response *response)
 {
 	int ret = -1;
 	int r;
@@ -99,13 +99,23 @@ pack_key_ed25519(const char *application,  struct sk_enroll_response *response)
 		skdebug(__func__, "malloc pubkey failed");
 		goto out;
 	}
-	/* Key handle contains sk */
-	/* XXX will be encrypted in the future */
-	response->key_handle_len = crypto_sign_ed25519_SECRETKEYBYTES;
+	/* get key handle size */
+	if (ecall_sk_get_key_handle_len_ed25519(global_eid, &r, application,
+	    &response->key_handle_len) != SGX_SUCCESS) {
+		skdebug(__func__,
+		    "calling ecall_sk_get_key_handle_len_ed25519 failed");
+		goto out;
+	}
+	if (r != 0) {
+		skdebug(__func__,
+		    "ecall_sk_get_key_handle_len_ed25519 failed: %d", r);
+		goto out;
+	}
 	if ((response->key_handle = malloc(response->key_handle_len)) == NULL) {
 		skdebug(__func__, "malloc key_handle failed");
 		goto out;
 	}
+	/* key handle contains sealed secret key  */
 	if (ecall_sk_enroll_ed25519(global_eid, &r, application,
 	    response->public_key, response->public_key_len,
 	    response->key_handle, response->key_handle_len) != SGX_SUCCESS) {
