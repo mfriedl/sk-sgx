@@ -129,8 +129,10 @@ pack_key_ed25519(const char *application, struct sk_enroll_response *response)
 	/* success */
 	ret = 0;
  out:
-	if (ret != 0)
+	if (ret != 0) {
 		free(response->public_key);
+		response->public_key = NULL;
+	}
 	return ret;
 }
 
