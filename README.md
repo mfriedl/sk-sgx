@@ -28,7 +28,7 @@ or
 
 	% make SK_DEBUG=1
 
-Use the resulting `sk-sgx.so` library as the SSH_SK_PROVIDER.
+Use the resulting `sk-sgx.so` library as the `SSH_SK_PROVIDER`.
 It will execute `enclave.signed.so` in the SGX enclave.
 
 	% SSH_SK_PROVIDER=./sk-sgx.so /home/ubuntu/ssh/bin/ssh-keygen -t ed25519-sk
@@ -42,5 +42,19 @@ If you want to use run sk-sgx standalone without OpenSSH:
 
 	% make SGX_MODE=SIM SK_DEBUG=1 TEST=1
 	% ./sk-sgx.so
+
+## WARNING
+
+If you sign `enclave.so` with a different `private.pem`, then the
+`MRSIGNER` measurement changes and the private keys can no longer be
+decryped.
+
+## Notes
+
+* SGX intro: https://blog.quarkslab.com/overview-of-intel-sgx-part-1-sgx-internals.html
+* SGX details: https://eprint.iacr.org/2016/086.pdf
+* emulated instructions in SDK: sdk/simulation/tinst/t_instructions.cpp
+* Foreshadow (spectre): https://www.usenix.org/system/files/conference/usenixsecurity18/sec18-van_bulck.pdf
+* SCONE (container): https://www.usenix.org/system/files/conference/osdi16/osdi16-arnautov.pdf
 
 -m
