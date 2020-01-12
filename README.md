@@ -9,6 +9,10 @@ The file `sk-sgx.c` implements the `SSH_SK_PROVIDER` for OpenSSH,
 `enclave.c` the matching SGX enclave.  The interface
 between provider and enclave is specified in `sk.edl`.
 
+This code can be used to protect private SSH host keys, for example.
+If SGX is supported by the virtual machine, then the private key
+will also be hidden from the cloud provider.
+
 ## Install Ubuntu 18.04
 
 See https://github.com/openenclave/openenclave/blob/master/docs/GettingStartedDocs/HyperVLinuxVMSetup.md
